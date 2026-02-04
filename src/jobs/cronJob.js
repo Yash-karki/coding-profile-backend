@@ -220,4 +220,4 @@ const initCronJob = () => {
     setTimeout(runDailyJob, 5000); // Delay 5s to allow DB connection
 };
 
-module.exports = { initCronJob, runDailyJob };
+module.exports = { initCronJob, runDailyJob, fetchAllPlatformData: runDailyJob };

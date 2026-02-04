@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const PlatformStats = require('../models/PlatformStats');
 const DailyActivity = require('../models/DailyActivity');
+const { fetchAllPlatformData } = require('../jobs/cronJob');
 
 // In-memory cache
 let cache = {
@@ -32,6 +33,30 @@ router.get('/health', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+/**
+ * POST /api/refresh
+ * Manually trigger data refresh
+ */
+router.post('/refresh', async (req, res) => {
+    try {
+        console.log('🔄 Manual refresh triggered...');
+
+        // Clear cache
+        cache = { stats: null, heatmap: null, lastUpdated: null };
+
+        // Fetch fresh data
+        await fetchAllPlatformData();
+
+        res.json({
+            success: true,
+            message: 'Data refresh completed',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 

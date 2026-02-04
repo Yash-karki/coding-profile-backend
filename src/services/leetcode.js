@@ -2,7 +2,8 @@ const axios = require('axios');
 
 const LEETCODE_GRAPHQL_URL = 'https://leetcode.com/graphql';
 
-const LEETCODE_QUERY = `
+// Query for user profile and submission stats
+const LEETCODE_PROFILE_QUERY = `
   query userProfile($username: String!) {
     matchedUser(username: $username) {
       username
@@ -20,6 +21,26 @@ const LEETCODE_QUERY = `
   }
 `;
 
+// Query for contest rating
+const LEETCODE_CONTEST_QUERY = `
+  query userContestRankingInfo($username: String!) {
+    userContestRanking(username: $username) {
+      rating
+      globalRanking
+      attendedContestsCount
+      topPercentage
+    }
+    userContestRankingHistory(username: $username) {
+      contest {
+        title
+        startTime
+      }
+      rating
+      ranking
+    }
+  }
+`;
+
 /**
  * Fetch LeetCode profile data using GraphQL API
  * @param {string} username - LeetCode username
@@ -27,10 +48,11 @@ const LEETCODE_QUERY = `
  */
 const fetchLeetCodeData = async (username) => {
     try {
-        const response = await axios.post(
+        // Fetch profile data
+        const profileResponse = await axios.post(
             LEETCODE_GRAPHQL_URL,
             {
-                query: LEETCODE_QUERY,
+                query: LEETCODE_PROFILE_QUERY,
                 variables: { username }
             },
             {
@@ -42,7 +64,7 @@ const fetchLeetCodeData = async (username) => {
             }
         );
 
-        const user = response.data?.data?.matchedUser;
+        const user = profileResponse.data?.data?.matchedUser;
 
         if (!user) {
             throw new Error(`LeetCode user "${username}" not found`);
@@ -63,6 +85,48 @@ const fetchLeetCodeData = async (username) => {
             console.warn('Failed to parse LeetCode submission calendar');
         }
 
+        // Fetch contest rating separately
+        let contestData = { rating: null, globalRanking: null, attendedContestsCount: 0 };
+        let ratingHistory = [];
+
+        try {
+            const contestResponse = await axios.post(
+                LEETCODE_GRAPHQL_URL,
+                {
+                    query: LEETCODE_CONTEST_QUERY,
+                    variables: { username }
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Referer': 'https://leetcode.com'
+                    },
+                    timeout: 10000
+                }
+            );
+
+            const contestInfo = contestResponse.data?.data?.userContestRanking;
+            if (contestInfo) {
+                contestData = {
+                    rating: Math.round(contestInfo.rating) || null,
+                    globalRanking: contestInfo.globalRanking || null,
+                    attendedContestsCount: contestInfo.attendedContestsCount || 0,
+                    topPercentage: contestInfo.topPercentage || null
+                };
+            }
+
+            // Get rating history (last 10 contests)
+            const historyData = contestResponse.data?.data?.userContestRankingHistory || [];
+            ratingHistory = historyData.slice(-10).map(h => ({
+                contestName: h.contest?.title,
+                rating: Math.round(h.rating),
+                ranking: h.ranking,
+                date: new Date(h.contest?.startTime * 1000)
+            }));
+        } catch (contestError) {
+            console.warn('Failed to fetch LeetCode contest data:', contestError.message);
+        }
+
         return {
             platform: 'leetcode',
             username: user.username,
@@ -71,7 +135,12 @@ const fetchLeetCodeData = async (username) => {
             mediumSolved: mediumStats.count,
             hardSolved: hardStats.count,
             ranking: user.profile?.ranking || null,
-            submissionCalendar, // { timestamp: count }
+            rating: contestData.rating,
+            globalRanking: contestData.globalRanking,
+            attendedContests: contestData.attendedContestsCount,
+            topPercentage: contestData.topPercentage,
+            ratingHistory,
+            submissionCalendar,
             fetchStatus: 'success'
         };
     } catch (error) {
