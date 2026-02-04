@@ -1,44 +1,49 @@
 const axios = require('axios');
-const cheerio = require('cheerio');
 
 /**
- * Fetch GeeksforGeeks profile data via HTML scraping
+ * Fetch GeeksforGeeks profile data using GFG's internal API
  * @param {string} username - GFG username
  * @returns {Object} Parsed profile data
  */
 const fetchGFGData = async (username) => {
     try {
-        // GFG provides a user profile API
+        // Use GFG's internal practice API
         const response = await axios.get(
-            `https://geeks-for-geeks-stats-api.vercel.app/?userName=${username}`,
-            { timeout: 15000 }
+            `https://www.geeksforgeeks.org/gfg-assets/user-data/${username}?type=profile`,
+            {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                timeout: 15000
+            }
         );
 
-        const data = response.data;
+        const data = response.data?.data || response.data;
 
-        if (!data || data.error) {
+        if (!data) {
             throw new Error(`GFG user "${username}" not found`);
         }
 
         return {
             platform: 'geeksforgeeks',
             username: username,
-            totalSolved: data.totalProblemsSolved || 0,
-            easySolved: data.Easy || 0,
-            mediumSolved: data.Medium || 0,
-            hardSolved: data.Hard || 0,
-            codingScore: data.codingScore || 0,
-            monthlyScore: data.monthlyScore || 0,
-            institutionRank: data.instituteRank || null,
+            totalSolved: data.total_problems_solved || 0,
+            codingScore: data.score || 0,
+            monthlyScore: data.monthly_score || 0,
+            institutionRank: data.institute_rank || null,
+            currentStreak: data.pod_solved_current_streak || 0,
+            longestStreak: data.pod_solved_longest_streak || 0,
             fetchStatus: 'success'
         };
     } catch (error) {
-        console.error(`GFG fetch error: ${error.message}`);
+        console.error(`GFG API error: ${error.message}`);
 
-        // Fallback: Try direct scraping
+        // Fallback: Try alternate API
         try {
-            return await fetchGFGDataScraping(username);
-        } catch (scrapingError) {
+            return await fetchGFGDataAlternate(username);
+        } catch (fallbackError) {
+            console.error(`GFG fallback error: ${fallbackError.message}`);
             return {
                 platform: 'geeksforgeeks',
                 fetchStatus: 'failed',
@@ -49,34 +54,29 @@ const fetchGFGData = async (username) => {
 };
 
 /**
- * Fallback: Scrape GFG profile directly
- * @param {string} username - GFG username
- * @returns {Object} Scraped profile data
+ * Alternate method using geeksforgeeks-api
  */
-const fetchGFGDataScraping = async (username) => {
+const fetchGFGDataAlternate = async (username) => {
     const response = await axios.get(
-        `https://www.geeksforgeeks.org/user/${username}/`,
-        {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 15000
-        }
+        `https://geeksforgeeks-api.vercel.app/api?userName=${username}`,
+        { timeout: 15000 }
     );
 
-    const $ = cheerio.load(response.data);
+    const data = response.data;
 
-    // Extract data from profile page
-    const scoreCards = $('.score_card_value');
+    if (!data || data.error) {
+        throw new Error(`GFG user "${username}" not found`);
+    }
 
     return {
         platform: 'geeksforgeeks',
         username: username,
-        codingScore: parseInt(scoreCards.eq(0).text()) || 0,
-        totalSolved: parseInt(scoreCards.eq(1).text()) || 0,
-        monthlyScore: parseInt(scoreCards.eq(2).text()) || 0,
-        institutionRank: parseInt($('.instituteRank').text()) || null,
-        fetchStatus: 'partial' // Indicate scraping fallback was used
+        totalSolved: data.totalProblemsSolved || 0,
+        easySolved: data.school || 0,
+        mediumSolved: (data.basic || 0) + (data.easy || 0),
+        hardSolved: (data.medium || 0) + (data.hard || 0),
+        codingScore: data.codingScore || 0,
+        fetchStatus: 'success'
     };
 };
 
